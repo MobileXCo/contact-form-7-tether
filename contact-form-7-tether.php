@@ -19,7 +19,7 @@ register_deactivation_hook( __FILE__, "cf7thr_deactivate" );
 register_uninstall_hook(    __FILE__, "cf7thr_uninstall" );
 
 function cf7thr_activate() {
-    $cf7thr_options = array(
+    $cf7thr_options = [
         'identifier'                    => 'mobile',
         'client'                        => '',
         'tether_endpoint'               => 'https://tetherxmp.com',
@@ -27,14 +27,14 @@ function cf7thr_activate() {
         'tether_oauth_client_secret'    => '',
         'tether_oauth_username'         => '',
         'tether_oauth_password'         => ''
-    );
+    ];
 
     add_option("cf7thr_options", $cf7thr_options);
 }
 
 function cf7thr_deactivate() { }
 
-function cf7thr_uninstall() { 
+function cf7thr_uninstall() {
     remove_option("cf7thr_options");
 }
 
@@ -64,7 +64,7 @@ function cf7thr_admin_form() {
     }
 
     ?>
-        
+
     <form method='post'>
 
     <?php
@@ -76,20 +76,20 @@ function cf7thr_admin_form() {
         $options['tether_oauth_client_secret'] = sanitize_text_field($_POST['tether_oauth_client_secret']);
         $options['tether_oauth_username'] = sanitize_text_field($_POST['tether_oauth_username']);
         $options['tether_oauth_password'] = sanitize_text_field($_POST['tether_oauth_password']);
-        
+
         update_option("cf7thr_options", $options);
-        
+
         echo "<br /><div class='updated'><p><strong>"; _e("Settings Updated."); echo "</strong></p></div>";
     }
-    
-    
+
+
     $options = get_option('cf7thr_options');
     foreach ($options as $k => $v ) {
         $value[$k] = $v;
     }
-    
+
     $siteurl = get_site_url();
-    
+
     ?>
 
     <table width='70%'>
@@ -108,7 +108,7 @@ function cf7thr_admin_form() {
 
     <table width='100%'>
         <tr>
-            <td width='70%'>        
+            <td width='70%'>
                 <div style="background-color:#333333;padding:8px;color:#eee;font-size:12pt;font-weight:bold;">
         &nbsp; Client Settings
                 </div>
@@ -117,7 +117,7 @@ function cf7thr_admin_form() {
                     <input type='text' name='client' value='<?php echo $value['client']; ?>'>
                     <br />
                     Enter your Client ID from Tether here.
-<!-- 
+<!--
                     <br />
                     <br />
                     <b>Identifier</b>
@@ -135,7 +135,7 @@ function cf7thr_admin_form() {
 
     <table width='100%'>
         <tr>
-            <td width='70%'>        
+            <td width='70%'>
                 <div style="background-color:#333333;padding:8px;color:#eee;font-size:12pt;font-weight:bold;">
         &nbsp; OAuth2 Settings
                 </div>
@@ -174,225 +174,378 @@ function cf7thr_admin_form() {
     <?php
 }
 
+
+
+class TetherApiHttpException extends Exception {}
+
+if (!function_exists('make_request')) {
+    /**
+     * Simplified method to make requests with cURL
+     *
+     * @param string $method    HTTP method: POST, GET, PUT, PATCH, DELETE
+     * @param string $url       URL to make request to
+     * @param array  $data      Data to pass with request
+     * @param array  $headers   Headers to set on the request
+     *
+     * @return array
+     * @throws TetherApiHttpException
+     */
+    function make_request($method, $url, $data = [], $headers = []) {
+        $method = strtoupper($method);
+        $url = filter_var($url, FILTER_VALIDATE_URL);
+
+        // Default options for cURL
+        $options = [
+            CURLOPT_RETURNTRANSFER => true,
+            // CURLOPT_HEADER => true,
+            // CURLOPT_SSL_VERIFYPEER => false,
+            // CURLOPT_SSL_VERIFYHOST => false,
+        ];
+
+        // Check for valid HTTP method
+        if (! in_array($method, ['POST', 'GET', 'PUT', 'PATCH', 'DELETE'])) {
+            throw new Exception("Invalid request method: '$method'");
+        }
+
+        // Check for valid url
+        if (! $url) {
+            throw new Exception("Invalid url: '$url'");
+        }
+
+        // if ($method == 'POST') {
+        //     $options[CURLOPT_POST] = true;
+        // }
+
+        // Set custom request method
+        if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
+            $options[CURLOPT_CUSTOMREQUEST] = $method;
+        }
+
+        // Build get parameters and query
+        if ($method == 'GET') {
+            $url = rtrim($url, '/') . '?' . http_build_query($data);
+        } else {
+            $options[CURLOPT_POSTFIELDS] = $data;
+        }
+
+        if (! empty($headers)) {
+            $options[CURLOPT_HTTPHEADER] = $headers;
+        }
+
+        $response_headers = [];
+
+        // Set the request url
+        $options[CURLOPT_URL] = $url;
+
+        // Set header retrieval function
+        $options[CURLOPT_HEADERFUNCTION] = function($curl, $header) use (&$response_headers) {
+            $len = strlen($header);
+            $header = explode(':', $header, 2);
+
+            // ignore invalid headers
+            if (count($header) < 2) {
+                return $len;
+            }
+
+            $name = strtolower(trim($header[0]));
+
+            if (!array_key_exists($name, $response_headers)) {
+                $response_headers[$name] = [trim($header[1])];
+            } else {
+                $response_headers[$name][] = trim($header[1]);
+            }
+
+            return $len;
+        };
+
+        // Initialize cURL session
+        $ch = curl_init();
+
+        // Set request cURL options
+        curl_setopt_array($ch, $options);
+
+        // Execute cURL request
+        $response_body = curl_exec($ch);
+
+        // Fetch response HTTP code
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        if ($http_code < 200 || $http_code > 299) {
+            // Request unsuccessful, log errors and throw exception
+            $message = "CF7 Tether: HTTP code $http_code: "
+                . curl_error($ch) . PHP_EOL
+                . json_encode($response_headers) . PHP_EOL
+                . $response_body;
+            curl_close($ch);        // Close session
+            error_log($message);    // Log error
+            throw new TetherApiHttpException($message); // Throw exception
+        }
+
+        // Close cURL session
+        curl_close($ch);
+
+        // Request succcess, return array of response body
+        return json_decode($response_body, true);
+    }
+}
+
+if (!function_exists('make_request_with_token')) {
+    /**
+     * Simplified method to make requests with cURL with OAuth access token
+     *
+     * @param string $method    HTTP method: POST, GET, PUT, PATCH, DELETE
+     * @param string $url       URL to make request to
+     * @param array  $data      Data to pass with request
+     * @param array  $headers   Headers to set on the request
+     *
+     * @return array
+     * @throws TetherApiHttpException
+     */
+    function make_request_with_token($method, $url, $data = [], $headers = []) {
+        $response_body = null;
+        // Attempt to fetch an access token
+        try {
+            $config = get_option('cf7thr_options');
+
+            if (empty($config['tether_endpoint'])
+                || empty($config['tether_oauth_client_id'])
+                || empty($config['tether_oauth_client_secret'])
+                || empty($config['tether_oauth_username'])
+                || empty($config['tether_oauth_password'])) {
+                throw new Exception('CF7 Tether: Missing configuration values for authentication with service');
+            }
+
+            $response_body = make_request(
+                'POST',
+                rtrim($config['tether_endpoint'], '/') . '/oauth/token',
+                [
+                    'grant_type' => 'password',
+                    'client_id' => $config['tether_oauth_client_id'],
+                    'client_secret' => $config['tether_oauth_client_secret'],
+                    'username' => $config['tether_oauth_username'],
+                    'password' => $config['tether_oauth_password']
+                ]
+            );
+        } catch  (TetherApiHttpException $e) {
+            error_log('CF7 Tether: Failed to fetch access token');
+            throw new TetherApiHttpException('CF7 Tether: Failed to fetch access token');
+        } catch (Exception $e) {
+            error_log('CF7 Tether: Failed to fetch access token');
+            error_log('CF7 Tether: ' . $e->getMessage());
+            throw new $e;
+        }
+
+        // Verify there's an access token in the response
+        if (empty($response_body['access_token'])) {
+            error_log('CF7 Tether: Failed to fetch access token');
+            throw new TetherApiHttpException('CF7 Tether: Failed to fetch access token');
+        }
+
+        // Merge OAuth headers
+        $headers = array_merge(
+            $headers,
+            [
+                'Authorization: Bearer ' . $response_body['access_token'],
+                'Accept: application/json',
+                'Content-Type: application/json'
+            ]
+        );
+
+        // Make request with OAuth headers
+        return make_request($method, $url, $data, $headers);
+    }
+}
+
+if (!function_exists('api_call')) {
+    /**
+     * Simplified method to make requests with cURL with OAuth access token
+     * and appropriate json headers
+     *
+     * @param string $method    HTTP method: POST, GET, PUT, PATCH, DELETE
+     * @param string $url       URL to make request to
+     * @param array  $data      Data to pass with request
+     * @param array  $headers   Headers to set on the request
+     *
+     * @return array
+     * @throws TetherApiHttpException
+     */
+    function api_call($method, $url, $data = [], $headers = []) {
+        // Merge headers
+        $headers = array_merge(
+            $headers,
+            [
+                'Accept: application/json',
+                'Content-Type: application/json'
+            ]
+        );
+
+        // Convert data to JSON
+        $data_string = json_encode($data);
+
+        // Remove content-length
+        if (in_array('Content-Length', $headers)) {
+            unset($headers[array_search('Content-Length', $headers)]);
+        }
+
+        // Set content-length
+        $headers[] = 'Content-Length: ' . strlen($data_string);
+
+        // Make request with token
+        return make_request_with_token(
+            $method,
+            $url,
+            $data_string,
+            $headers
+        );
+    }
+}
+
 function cf7thr_before_send_mail($cf7) {
     $form_id = $cf7->id();
 
-    $options = get_option('cf7thr_options');
-    foreach ($options as $k => $v ) {
-        $value[$k] = $v;
-    }
+    $config = get_option('cf7thr_options');
 
-    // authenticate for token
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $value['tether_endpoint'] . '/oauth/token');
-    // curl_setopt($ch, CURLOPT_URL, 'https://tetherxmp.com/oauth/token');
-    curl_setopt($ch, CURLOPT_POST, 1);
+    // create participant
+    $submission = WPCF7_Submission::get_instance();
+    $data = $submission->get_posted_data();
 
-    $params = [
-        'grant_type' => 'password',
-        'client_id' => $value['tether_oauth_client_id'],
-        'client_secret' => $value['tether_oauth_client_secret'],
-        'username' => $value['tether_oauth_username'],
-        'password' => $value['tether_oauth_password']
-    ];
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $mappings = get_post_meta($form_id, '_cf7thr_mappings', true);
+    $parsedData = array_combine(
+        $mappings,                              // Remap keys to values
+        array_intersect_key($data, $mappings)   // Keep only similar array keys
+    );
 
-    $response_body = curl_exec($ch);
-    $info = curl_getinfo($ch);
-    if ($info['http_code'] == 200) {
-        $response = json_decode($response_body, true);
-        $token = $response['access_token'];
-        curl_close($ch);
+    $identifiers = [];
 
-        // create participant
-        $submission = WPCF7_Submission::get_instance();
-        $data = $submission->get_posted_data();
-
-        $mappings = get_post_meta($form_id, '_cf7thr_mappings', true);
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $value['tether_endpoint'] . '/api/v2/participants');
-        // curl_setopt($ch, CURLOPT_URL, 'https://tetherxmp.com/api/v2/participant');
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Authorization: Bearer ' . $token,
-            'Accept: application/json',
-            'Content-Type: application/json'
-        ));
-
-        $identifiers = [];
-
-        // phone is mapped
-        if (array_search('phone', $mappings) && $data[array_search('phone', $mappings)]) {
-            error_log('a');
-            if (array_key_exists(array_search('phone', $mappings), $data)) {
-                array_push($identifiers, 
-                    [
-                        'type' => 'phone',
-                        'value' => $data[array_search('phone', $mappings)]
-                    ]
-                );
-            }
-        // phone is not mapped but exists
-        } elseif (array_key_exists('phone', $data) && $data[array_search('phone', $mappings)]) {
-            error_log('b');
-            array_push($identifiers, 
-                [
-                    'type' => 'phone',
-                    'value' => $data['phone']
-                ]
-            );
-        // email is mapped
-        } elseif (array_search('email', $mappings)) {
-            if (array_key_exists(array_search('email', $mappings), $data) && $data[array_search('email', $mappings)]) {
-                array_push($identifiers, 
-                    [
-                        'type' => 'email',
-                        'value' => $data[array_search('email', $mappings)]
-                    ]
-                );
-            }
-        // email is not mapped but exists
-        } elseif (array_key_exists('email', $data) && $data[array_search('email', $mappings)]) {
-            error_log('d');
-            array_push($identifiers, 
-                [
-                    'type' => 'email',
-                    'value' => $data['email']
-                ]
-            );
-        } else {
-            error_log("TETHER: No identifier provided.");
-        }
-
-        $params = [
-            'identifiers' => $identifiers,
-            'client' => $value['client'],
+    // Phone is mapped
+    if (! empty($parsedData['phone'])) {
+        $identifiers[] = [
+            'type' => 'phone',
+            'value' => $parsedData['phone']
         ];
 
+    }
+    // Email is mapped
+    elseif (! empty($parsedData['email'])) {
+        $identifiers[] = [
+            'type' => 'email',
+            'value' => $parsedData['email']
+        ];
+    }
+    // No identifiers present, log error
+    else {
+        error_log('CF7 Tether: No identifier provided.');
+    }
+
+    if (! empty($identifiers)) {
         $actual_data = [];
         foreach($data as $key => $keyvalue) {
             if (mb_substr($key, 0, 1, 'utf-8') != '_') {
                 if (array_key_exists($key, $mappings)) {
                     $actual_data[$mappings[$key]] = $keyvalue;
                 } else {
-                    $actual_data[$key] = $keyvalue;    
+                    $actual_data[$key] = $keyvalue;
                 }
             }
         }
-        $extras = ['referer-page'];
-        foreach ($extras as $key) {
-            unset($actual_data[$key]);
+
+        // Remove unwanted data
+        unset($actual_data['referer-page']);
+
+        $response_body = api_call(
+            'POST',
+            rtrim($config['tether_endpoint'], '/') . '/api/v2/participants',
+            [
+                'identifiers' => $identifiers,
+                'client' => $config['client'],
+                'data' => $actual_data,
+            ]
+        );
+
+        $participant_id = $response_body['participant'];
+
+        if (! empty($parsedData['message']) && ! empty($parsedData['email'])) {
+            $message_response_body = api_call(
+                'POST',
+                rtrim($config['tether_endpoint'], '/') . '/internal/messages',
+                [
+                    'client' => $config['client'],
+                    'messages' => [
+                        [
+                            'participant' => [
+                                'identifier' => $parsedData['email'],
+                                'type' => 'email',
+                                'metadata' => $actual_data,
+                            ],
+                            'channel' => [
+                                // 'identifier' => 'something-here',
+                                'type' => 'email',
+                            ],
+                            'message' => [
+                                // 'external_identifier' => 'something-here',
+                                'content' => $parsedData['message'],
+                                'timestamp' => gmdate('Y-m-d g:i:s'),
+                            ],
+                        ]
+                    ]
+                ]
+            );
         }
-        $params['data'] = $actual_data;
-
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-        // curl_setopt($ch, CURLOPT_VERBOSE, true);
-        // $verbose = fopen('php://temp', 'w+');
-        // curl_setopt($ch, CURLOPT_STDERR, $verbose);
-
-        $response_body = curl_exec($ch);
-        $info = curl_getinfo($ch);
-
-        if ($info['http_code'] != 200) {
-            error_log('TETHER: Could not create/update Participant');
-        }
-
-        // rewind($verbose);
-        // $verboseLog = stream_get_contents($verbose);
-        // error_log($verboseLog);
-
-        curl_close($ch);
-
-        $participant_id = json_decode($response_body, true)['participant'];
 
         if ($data['tether-lists']) {
-            error_log('TETHER: tether-lists is: ' . $data['tether-lists']);    
-        } else {
-            error_log('TETHER: no tether-lists to add to');
-        }
-        
+            error_log('CF7 Tether: tether-lists is: ' . $data['tether-lists']);
+            error_log('CF7 Tether: adding to a list');
 
-        if ($data['tether-lists']) {
-            error_log('TETHER: adding to a list');
-            // get list id
-            $ch = curl_init();
+            $response_body = api_call(
+                'GET',
+                rtrim($config['tether_endpoint'], '/') . '/api/v2/lists',
+                [
+                    'client' => $config['client'],
+                    'name' => $data['tether-lists']
+                ]
+            );
 
-            $encoded_bits =  'client=' . $value['client'] . '&name=' . curl_escape($ch, $data['tether-lists']);
-            curl_setopt($ch, CURLOPT_URL, $value['tether_endpoint'] . '/api/v2/lists?' . $encoded_bits);
+            $list_id = null;
 
-            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-                'Authorization: Bearer ' . $token
-            ));
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $response_body = curl_exec($ch);
-            $info = curl_getinfo($ch);
-            curl_close($ch);
-
-            if ($info['http_code'] != 200) {
-                error_log('TETHER: Could not find list "' . $params['name'] . '"');
+            if (! empty($response_body['data'])
+                && ! empty($response_body['data'][0])
+                && ! empty($response_body['data'][0]['id'])) {
+                $list_id = $response_body['data'][0]['id'];
             }
 
-            $list_id = json_decode($response_body, true)['data'][0]['id'];
-            
             // assign
             if ($list_id) {
-                $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL,
-                    $value['tether_endpoint'] . 
-                    '/api/v2/lists/' . $list_id);
-                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
-                curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-                    'Authorization: Bearer ' . $token,
-                    'Content-type: application/json',
-                ));
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-                $params = [
-                    'client' => $value['client'],
-                    'participants' => [$participant_id],
-                    'action' => 'add'
-                ];
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
-
-                // curl_setopt($ch, CURLOPT_VERBOSE, true);
-                // $verbose = fopen('php://temp', 'w+');
-                // curl_setopt($ch, CURLOPT_STDERR, $verbose);
-
-                $response_body = curl_exec($ch);
-
-                // rewind($verbose);
-                // $verboseLog = stream_get_contents($verbose);
-                // error_log($verboseLog);
-
-                $info = curl_getinfo($ch);
-                curl_close($ch);
-
-                if ($info['http_code'] != 200) {
-                    error_log('TETHER: Could not add participant "' . $participant_id . '" to list "' . $list_id . '"');
+                $response_body = null;
+                try {
+                    $response_body = api_call(
+                        'PUT',
+                        rtrim($config['tether_endpoint'], '/') . '/api/v2/lists/' . $list_id,
+                        [
+                            'client' => $config['client'],
+                            'participants' => [$participant_id],
+                            'action' => 'add'
+                        ]
+                    );
+                } catch (Exception $e) {
+                    error_log("CF7 Tether: Could not add participant '$participant_id' to list '$list_id'");
                 }
             }
-
+        } else {
+            error_log('CF7 Tether: no tether-lists to add to');
         }
-    } else {
-        error_log('TETHER: Could not authenticate.');
-        curl_close($ch);
     }
 }
 
 function cf7thr_admin_after_additional_settings($cf7) {
     $post_id = $cf7->id();
-    
+
     $enable = get_post_meta($post_id, "_cf7thr_enable", true);
     $mappings = get_post_meta($post_id, "_cf7thr_mappings", true);
-    
-    if ($enable == "1") { 
+
+    if ($enable == "1") {
         $checked = "CHECKED";
     } else {
-        $checked = ""; 
+        $checked = "";
     }
 
     if ($mappings) {
@@ -452,20 +605,20 @@ jQuery('.cf7thr_mapping_delete').live("click", function(e) {
 });
 </script>
 MAPPINGS;
-    
+
     echo $mappings;
 }
 
 function cf7thr_editor_panels($panels) {
-    $new_page = array(
-        'Tether' => array(
+    $new_page = [
+        'Tether' => [
             'title' => __( 'Tether', 'contact-form-7' ),
             'callback' => 'cf7thr_admin_after_additional_settings'
-        )
-    );
-    
+        ]
+    ];
+
     $panels = array_merge($panels, $new_page);
-    
+
     return $panels;
 }
 
@@ -474,18 +627,18 @@ function array_filter_key( $input, $callback ) {
         trigger_error( 'array_filter_key() expects parameter 1 to be array, ' . gettype( $input ) . ' given', E_USER_WARNING );
         return null;
     }
-    
+
     if ( empty( $input ) ) {
         return $input;
     }
-    
+
     $filteredKeys = array_filter( array_keys( $input ), $callback );
     if ( empty( $filteredKeys ) ) {
-        return array();
+        return [];
     }
-    
+
     $input = array_intersect_key( array_flip( $filteredKeys ), $input );
-    
+
     return $input;
 }
 
