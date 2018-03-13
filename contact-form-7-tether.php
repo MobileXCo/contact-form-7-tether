@@ -3,9 +3,8 @@
 Plugin Name: Contact Form 7 - Tether Extension
 Plugin URI: https://tetherxmp.com/
 Description: Tether integration
-Author: Adam Goucher
-Author URI: https://tetherxmp.com/
-Version: 0.6
+Author: Adam Goucher / MobileXCo
+Version: 1.0
 */
 
 defined( 'ABSPATH' ) or die( 'No script kiddies please!' );
