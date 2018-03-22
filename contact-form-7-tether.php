@@ -479,7 +479,7 @@ function cf7thr_before_send_mail($cf7) {
                             ],
                             'channel' => [
                                 // 'identifier' => 'something-here',
-                                'type' => 'email',
+                                'type' => 'cf7',
                             ],
                             'message' => [
                                 // 'external_identifier' => 'something-here',
