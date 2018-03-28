@@ -17,11 +17,19 @@ register_activation_hook(   __FILE__, "cf7thr_activate" );
 register_deactivation_hook( __FILE__, "cf7thr_deactivate" );
 register_uninstall_hook(    __FILE__, "cf7thr_uninstall" );
 
+if (getenv('CF7_TETHER_ENDPOINT')) {
+    define( 'CF7_TETHER_ENDPOINT', getenv('CF7_TETHER_ENDPOINT'));
+} else {
+    define( 'CF7_TETHER_ENDPOINT', 'https://tetherxmp.com');
+}
+
+define('WP_DEBUG', false);
+
 function cf7thr_activate() {
     $cf7thr_options = [
         'identifier'                    => 'mobile',
         'client'                        => '',
-        'tether_endpoint'               => 'https://tetherxmp.com',
+        'tether_endpoint'               => CF7_TETHER_ENDPOINT,
         'tether_oauth_client_id'        => '',
         'tether_oauth_client_secret'    => '',
         'tether_oauth_username'         => '',
@@ -167,7 +175,7 @@ function cf7thr_admin_form() {
         </tr>
     </table>
     <input type='hidden' name='update' value='1'>
-    <input type='hidden' name='tether_endpoint' value='https://tetherxmp.com'>
+    <input type='hidden' name='tether_endpoint' value="<?php echo CF7_TETHER_ENDPOINT ?>">
     <input type='hidden' name='identifier' value='Mobile'>
 
     <?php
