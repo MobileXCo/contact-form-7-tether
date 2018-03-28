@@ -417,6 +417,8 @@ function cf7thr_before_send_mail($cf7) {
     $data = $submission->get_posted_data();
 
     $mappings = get_post_meta($form_id, '_cf7thr_mappings', true);
+    ksort($mappings);   // Ensure the keys are in the same order
+    ksort($data);       // Ensure the keys are in the same order
     $parsedData = array_combine(
         $mappings,                              // Remap keys to values
         array_intersect_key($data, $mappings)   // Keep only similar array keys
