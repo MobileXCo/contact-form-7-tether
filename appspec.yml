@@ -8,5 +8,9 @@ permissions:
     pattern: "**"
     owner: www-data
     group: www-data
-
+hooks:
+  AfterInstall:
+    - location: codedeploy/fpm.sh
+      timeout:
+      runas: root
 
