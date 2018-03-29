@@ -23,8 +23,6 @@ if (getenv('CF7_TETHER_ENDPOINT')) {
     define( 'CF7_TETHER_ENDPOINT', 'https://tetherxmp.com');
 }
 
-define('WP_DEBUG', false);
-
 function cf7thr_activate() {
     $cf7thr_options = [
         'identifier'                    => 'mobile',
@@ -124,17 +122,6 @@ function cf7thr_admin_form() {
                     <input type='text' name='client' value='<?php echo $value['client']; ?>'>
                     <br />
                     Enter your Client ID from Tether here.
-<!--
-                    <br />
-                    <br />
-                    <b>Identifier</b>
-                    <select name="identifier">
-                        <option <?php if ($value['identifier'] == "Mobile") { echo "SELECTED"; } ?> value="Mobile">Mobile</option>
-                        <option <?php if ($value['identifier'] == "Email") { echo "SELECTED"; } ?> value="Email">Mobile</option>
-                    </select>
-                    <br />
-                    What are you using as your identifier within Tether.
- -->
                 </div>
             </td>
         </tr>
@@ -416,14 +403,24 @@ function cf7thr_before_send_mail($cf7) {
     $submission = WPCF7_Submission::get_instance();
     $data = $submission->get_posted_data();
 
+    // Remove default CF7 values
+    $filteredData = array_filter($data, function ($key) {
+        return strpos($key, '_wpcf7') === false;
+    }, ARRAY_FILTER_USE_KEY);
+
+    // Get Tether mappings
     $mappings = get_post_meta($form_id, '_cf7thr_mappings', true);
     $mappings = empty($mappings) ? [] : $mappings; // In case no mappings are set
-    ksort($mappings);   // Ensure the keys are in the same order
-    ksort($data);       // Ensure the keys are in the same order
+
+    ksort($mappings);       // Ensure the keys are in the same order
+    ksort($filteredData);   // Ensure the keys are in the same order
+
+    $unmappedData = array_diff_key($filteredData, $mappings);     // Unmapped data
     $parsedData = array_combine(
-        $mappings,                              // Remap keys to values
-        array_intersect_key($data, $mappings)   // Keep only similar array keys
+        $mappings,                                      // Remap keys to values
+        array_intersect_key($filteredData, $mappings)   // Keep only similar array keys
     );
+    $parsedData = array_merge($parsedData, $unmappedData); // Merge mapped data and unmapped data
 
     $identifiers = [];
 
@@ -502,7 +499,7 @@ function cf7thr_before_send_mail($cf7) {
             );
         }
 
-        if ($data['tether-lists']) {
+        if (isset($data['tether-lists'])) {
             error_log('CF7 Tether: tether-lists is: ' . $data['tether-lists']);
             error_log('CF7 Tether: adding to a list');
 
