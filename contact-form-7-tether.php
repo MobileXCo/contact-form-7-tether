@@ -445,27 +445,13 @@ function cf7thr_before_send_mail($cf7) {
     }
 
     if (! empty($identifiers)) {
-        $actual_data = [];
-        foreach($data as $key => $keyvalue) {
-            if (mb_substr($key, 0, 1, 'utf-8') != '_') {
-                if (array_key_exists($key, $mappings)) {
-                    $actual_data[$mappings[$key]] = $keyvalue;
-                } else {
-                    $actual_data[$key] = $keyvalue;
-                }
-            }
-        }
-
-        // Remove unwanted data
-        unset($actual_data['referer-page']);
-
         $response_body = api_call(
             'POST',
             rtrim($config['tether_endpoint'], '/') . '/api/v2/participants',
             [
                 'identifiers' => $identifiers,
                 'client' => $config['client'],
-                'data' => $actual_data,
+                'data' => $parsedData,
             ]
         );
 
