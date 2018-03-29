@@ -432,6 +432,8 @@ function cf7thr_before_send_mail($cf7) {
 
     // Phone is mapped
     if (! empty($parsedData['phone'])) {
+        // TODO: Refactor Tether to accept country calling codes
+        $parsedData['phone'] = ltrim($parsedData['phone'], '+1');
         $identifiers[] = [
             'type' => 'phone',
             'value' => $parsedData['phone']
