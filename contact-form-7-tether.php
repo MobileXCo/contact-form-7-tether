@@ -422,6 +422,12 @@ function cf7thr_before_send_mail($cf7) {
     );
     $parsedData = array_merge($parsedData, $unmappedData); // Merge mapped data and unmapped data
 
+    // An identifier is required
+    if (empty($parsedData['email']) && empty($parsedData['phone'])) {
+        error_log("CF7 Tether: The field 'email' or 'phone' is mandatory.");
+        return null; // Exit
+    }
+
     $identifiers = [];
 
     // Phone is mapped
@@ -468,7 +474,7 @@ function cf7thr_before_send_mail($cf7) {
                             'participant' => [
                                 'identifier' => $parsedData['email'],
                                 'type' => 'email',
-                                'metadata' => $actual_data,
+                                'metadata' => $parsedData,
                             ],
                             'channel' => [
                                 // 'identifier' => 'something-here',
@@ -485,7 +491,7 @@ function cf7thr_before_send_mail($cf7) {
             );
         }
 
-        if (isset($data['tether-lists'])) {
+        if (! empty($data['tether-lists'])) {
             error_log('CF7 Tether: tether-lists is: ' . $data['tether-lists']);
             error_log('CF7 Tether: adding to a list');
 
