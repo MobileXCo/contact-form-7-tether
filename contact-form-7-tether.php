@@ -217,7 +217,20 @@ if (!function_exists('make_request')) {
 
         // Build get parameters and query
         if ($method == 'GET') {
-            $url = rtrim($url, '/') . '?' . http_build_query($data);
+            $url = rtrim($url, '/') . '?' . http_build_query(json_decode($data));
+
+            // Remove content-type
+            if ($keys = array_keys($headers, 'Content-Type: application/json')) {
+                foreach($keys as $key) {
+                    unset($headers[$key]);
+                }
+            }
+            // Remove content-length
+            if ($keys = preg_grep('/^Content-Length: .*/', $headers)) {
+                foreach($keys as $key) {
+                    unset($headers[array_search($key, $headers)]);
+                }
+            }
         } else {
             $options[CURLOPT_POSTFIELDS] = $data;
         }
