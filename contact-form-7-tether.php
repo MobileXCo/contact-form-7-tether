@@ -453,19 +453,19 @@ function cf7thr_before_send_mail($cf7) {
         ];
 
     }
+
     // Email is mapped
-    elseif (! empty($parsedData['email'])) {
+    if (! empty($parsedData['email'])) {
         $identifiers[] = [
             'type' => 'email',
             'value' => $parsedData['email']
         ];
     }
-    // No identifiers present, log error
-    else {
-        error_log('CF7 Tether: No identifier provided.');
-    }
 
-    if (! empty($identifiers)) {
+    // No identifiers present, log error
+    if (empty($identifiers)) {
+        error_log('CF7 Tether: No identifier provided.');
+    } else {
         $response_body = api_call(
             'POST',
             rtrim($config['tether_endpoint'], '/') . '/api/v2/participants',
